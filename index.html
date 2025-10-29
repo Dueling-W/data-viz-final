@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <script src="./libs/d3.js"></script>
+    <script src="libs/d3jstopojson.v1.js"></script>
+    <title>Final Project</title>
+
+    <style>
+
+        .container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+        }
+
+        body {
+            background-color: azure;
+        }
+
+
+    </style>
+
+
+
+</head>
+
+
+
+
+<body>
+
+    <div class="container">
+        <div class="map1"></div>
+    </div>
+
+
+
+    <script>
+
+        const window_dims = {
+            width: window.innerWidth,
+            height: window.innerHeight
+        };
+
+
+        const svgWidth = window_dims.width-100;
+        const svgHeight = window_dims.height-100;
+
+        const svg = d3.select("map1").append("svg")
+            .attr("width", svgWidth)
+            .attr("height", svgHeight)
+        
+        
+        Promise.all([
+            
+        ])
+
+
+
+        
+
+
+
+
+
+    </script>
+
+
+
+
+
+</body>
+
+</html>
+
