@@ -11,20 +11,22 @@
 
     <style>
 
-        .container {
+        .container{
             display: flex;
             flex-direction: column;
             align-items: center;
             justify-content: center;
+            margin: 50px;
+            margin-bottom:100px;
         }
 
-        body {
-            background-color: azure;
+        h1 {
+            font-family:Arial, Helvetica, sans-serif;
+            text-align:center;
         }
 
 
     </style>
-
 
 
 </head>
@@ -35,12 +37,17 @@
 <body>
 
     <div class="container">
-        <div class="map1"></div>
+        <div class="worldmap">
+            <h1>World Population (2024)</h1>
+        </div>
+        <div class="worldmap2"></div>
     </div>
 
 
-
     <script>
+        
+        let countriesGeo = "data/countries.geojson"
+        let populationData = "data/population_data.csv"
 
         const window_dims = {
             width: window.innerWidth,
@@ -48,24 +55,100 @@
         };
 
 
-        const svgWidth = window_dims.width-100;
-        const svgHeight = window_dims.height-100;
-
-        const svg = d3.select("map1").append("svg")
-            .attr("width", svgWidth)
-            .attr("height", svgHeight)
-        
-        let countriesGeo = "data/countries.geojson"
-        let populationData = "data/population_data.csv"
-
-        
+        const svgWidth = window_dims.width-150;
+        const svgHeight = window_dims.height-150;
 
 
+        Promise.all([d3.json(countriesGeo), d3.csv(populationData)], // asynchronous load of both data sources using promise.all()
+            d3.autoType())                              // Auto formatting data
+            .then(data => {
 
-        
+                let geoJson = data[0]
+                let popData = data[1]
+
+                const generateWorldMap = (geoJson,containerName,width,height,margin=30) => {
+
+                    const svg = d3.select(containerName).append("svg")
+                        .attr("width", width)
+                        .attr("height", height);
+                    
+                    // create array of 3 character long country codes (i.e. USA)
+                    let countries = [];
+                    geoJson.features.forEach(d => {countries.push(d.properties["ISO3166-1-Alpha-3"])})
+                    
+                    let filteredPopData = []
+                    popData.forEach(d => {
+                        if(countries.includes(d["Country Code"])) {
+                            filteredPopData.push(d)
+                        }
+                    })
+
+                    let popExtent = d3.extent(filteredPopData, (d) => {return +d[2024]})
+                    console.log(popExtent)
+
+                    // https://colorbrewer2.org/#type=diverging&scheme=RdBu&n=5
+                    const colorInterpolator = d3.interpolateRgbBasis(["#ca0020", "#f4a582", "#f7f7f7", "#92c5de", "#0571b0"].reverse())
+                    const logScale = d3.scaleLog().domain(popExtent)
+
+                    let projection = d3.geoEquirectangular()
+                                        .fitSize([width-margin, height-margin], geoJson)
+
+                    let geoGenerator = d3.geoPath()
+                        .projection(d3.geoEquirectangular().fitSize([width-margin,height-margin], geoJson))
+
+                    
+
+                    svg.selectAll("path")
+                        .data(geoJson.features)
+                        .enter()
+                        .append("path")
+                        .attr("d", geoGenerator)
+                        .attr("fill", d => {
+                            try{
+                                let currentCode = d.properties["ISO3166-1-Alpha-3"]
+                                let countryData = filteredPopData.find(i => i["Country Code"] === currentCode)
+                                return colorInterpolator(logScale(countryData[2024]))
+                            }
+                            catch (error)
+                            {
+                                // in the case of counties with no data;
+                                return "gray";
+                            }
+                        })
+
+
+                }
+                generateWorldMap(geoJson,".worldmap",svgWidth,svgHeight)
+
+                generateWorldMap(geoJson,".worldmap2",svgWidth,svgHeight)
+
+
+                
+
+                
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+            })  
 
 
     </script>
