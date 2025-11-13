@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>Bivariate World Map</title>
+<title>Bivariate World Map with Pan and Zoom</title>
 <script src="https://d3js.org/d3.v7.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/topojson@3"></script>
 <style>
@@ -12,6 +12,7 @@
   svg {
     width: 100%;
     height: 600px;
+    cursor: grab;
   }
   .country {
     stroke: #fff;
@@ -27,22 +28,27 @@
     width: 30px;
     height: 30px;
   }
-  .legend-label {
-    margin-top: 5px;
+  .tooltip {
+    position: absolute;
+    background: rgba(0,0,0,0.8);
+    color: #fff;
+    padding: 5px 10px;
+    border-radius: 4px;
+    pointer-events: none;
     font-size: 12px;
   }
 </style>
 </head>
 <body>
-<h2>Bivariate World Map with Dummy Data</h2>
+<h2>Bivariate World Map with Pan and Zoom</h2>
 <svg></svg>
 
 <div>
   <div>Bivariate Legend:</div>
   <div class="legend" id="legend"></div>
-  <div class="legend-label">Var1 →</div>
-  <div class="legend-label">Var2 ↓</div>
 </div>
+
+<div class="tooltip" id="tooltip" style="opacity:0"></div>
 
 <script>
 const width = 960;
@@ -52,23 +58,26 @@ const svg = d3.select("svg")
   .attr("width", width)
   .attr("height", height);
 
+// Group to hold all countries
+const g = svg.append("g");
+
 const projection = d3.geoMercator()
   .scale(150)
   .translate([width/2, height/1.5]);
 
 const path = d3.geoPath().projection(projection);
 
-// Create dummy data for every country (var1 and var2 between 0 and 1)
+const tooltip = d3.select("#tooltip");
+
+// Dummy data for every country
 function generateData() {
   const data = {};
-  // ISO numeric codes roughly from 4 to 894 (simplified)
   for (let i = 4; i <= 894; i++) {
     const code = i.toString();
-    data[code] = [Math.random(), Math.random()];
+    data[code] = [Math.random().toFixed(2), Math.random().toFixed(2)];
   }
   return data;
 }
-
 const data = generateData();
 
 // 3x3 bivariate color scale
@@ -84,7 +93,6 @@ const colorScale = d3.scaleOrdinal()
     "#be64ac","#8c62aa","#3b4994"
   ]);
 
-// Map var1 and var2 into 0,1,2 bins
 function getBivariateKey(var1, var2) {
   const bin1 = Math.floor(var1 * 3);
   const bin2 = Math.floor(var2 * 3);
@@ -93,9 +101,16 @@ function getBivariateKey(var1, var2) {
 
 // Load world TopoJSON
 d3.json("https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json").then(worldData => {
+  const countryNames = {};
+  worldData.objects.countries.geometries.forEach(d => {
+    countryNames[d.id] = d.properties ? d.properties.name : "Unknown";
+  });
+
   const countries = topojson.feature(worldData, worldData.objects.countries).features;
 
-  svg.selectAll("path")
+  let active = null;
+
+  const countryPaths = g.selectAll("path")
     .data(countries)
     .enter()
     .append("path")
@@ -106,9 +121,37 @@ d3.json("https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json").then(w
       if (!countryData) return "#eee";
       const [var1, var2] = countryData;
       return colorScale(getBivariateKey(var1, var2));
+    })
+    .on("mouseover", (event, d) => {
+      const countryData = data[d.id];
+      tooltip.transition().duration(200).style("opacity", 1);
+      tooltip.html(`
+        <strong>${countryNames[d.id] || "Unknown"}</strong><br>
+        <strong>Var1:</strong> ${countryData ? countryData[0] : "N/A"}<br>
+        <strong>Var2:</strong> ${countryData ? countryData[1] : "N/A"}
+      `)
+      .style("left", (event.pageX + 10) + "px")
+      .style("top", (event.pageY - 28) + "px");
+    })
+    .on("mousemove", (event) => {
+      tooltip.style("left", (event.pageX + 10) + "px")
+             .style("top", (event.pageY - 28) + "px");
+    })
+    .on("mouseout", () => {
+      tooltip.transition().duration(200).style("opacity", 0);
+    })
+    .on("click", (event, d) => {
+      if (active === d) {
+        resetZoom();
+        active = null;
+      } else {
+        zoomToCountry(d);
+        active = d;
+      }
+      event.stopPropagation();
     });
 
-  // Add legend
+  // Legend
   const legendContainer = d3.select("#legend");
   const legendKeys = colorScale.domain();
   legendContainer.selectAll("div")
@@ -116,8 +159,55 @@ d3.json("https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json").then(w
     .enter()
     .append("div")
     .style("background-color", d => colorScale(d));
-});
 
+  // D3 zoom behavior (pan and scroll)
+  const zoom = d3.zoom()
+    .scaleExtent([1, 8])
+    .on("zoom", (event) => {
+      g.attr("transform", event.transform);
+    });
+
+  svg.call(zoom);
+
+  // Zoom to country function
+  function zoomToCountry(d) {
+    const bounds = path.bounds(d);
+    const dx = bounds[1][0] - bounds[0][0];
+    const dy = bounds[1][1] - bounds[0][1];
+    const x = (bounds[0][0] + bounds[1][0]) / 2;
+    const y = (bounds[0][1] + bounds[1][1]) / 2;
+    const k = Math.min(8, 0.9 / Math.max(dx / width, dy / height));
+
+    svg.transition()
+       .duration(750)
+       .call(
+         zoom.transform,
+         d3.zoomIdentity
+           .translate(width / 2, height / 2)
+           .scale(k)
+           .translate(-x, -y)
+       );
+  }
+
+  // Reset to world map
+  function resetZoom() {
+    svg.transition()
+       .duration(750)
+       .call(
+         zoom.transform,
+         d3.zoomIdentity
+       );
+  }
+
+  // Click background to reset zoom
+  svg.on("click", (event) => {
+    if (event.target.tagName === 'svg') {
+      resetZoom();
+      active = null;
+    }
+  });
+
+});
 </script>
 </body>
 </html>
