@@ -6,40 +6,19 @@
 <script src="https://d3js.org/d3.v7.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/topojson@3"></script>
 <style>
-  body {
-    font-family: sans-serif;
-  }
-  svg {
-    width: 100%;
-    height: 600px;
-    cursor: grab;
-  }
-  .country {
-    stroke: #fff;
-    stroke-width: 0.5px;
-  }
-  .legend {
-    display: grid;
-    grid-template-columns: repeat(3, 30px);
-    gap: 2px;
-    margin-top: 10px;
-  }
-  .legend div {
-    width: 30px;
-    height: 30px;
-  }
+  body { font-family: sans-serif; }
+  svg { width: 100%; height: 600px; cursor: grab; }
+  .country { stroke: #fff; stroke-width: 0.5px; }
+  .legend { display: grid; grid-template-columns: repeat(3, 30px); gap: 2px; margin-top: 10px; }
+  .legend div { width: 30px; height: 30px; }
   .tooltip {
-    position: absolute;
-    background: rgba(0,0,0,0.8);
-    color: #fff;
-    padding: 5px 10px;
-    border-radius: 4px;
-    pointer-events: none;
-    font-size: 12px;
+    position: absolute; background: rgba(0,0,0,0.8); color: #fff;
+    padding: 5px 10px; border-radius: 4px; pointer-events: none; font-size: 12px;
   }
 </style>
 </head>
 <body>
+
 <h2>Bivariate World Map with Pan and Zoom</h2>
 <svg></svg>
 
@@ -54,27 +33,18 @@
 const width = 960;
 const height = 600;
 
-const svg = d3.select("svg")
-  .attr("width", width)
-  .attr("height", height);
-
-// Group to hold all countries
+const svg = d3.select("svg").attr("width", width).attr("height", height);
 const g = svg.append("g");
 
-const projection = d3.geoMercator()
-  .scale(150)
-  .translate([width/2, height/1.5]);
-
+const projection = d3.geoMercator().scale(150).translate([width/2, height/1.5]);
 const path = d3.geoPath().projection(projection);
-
 const tooltip = d3.select("#tooltip");
 
-// Dummy data for every country
+// Dummy data generator
 function generateData() {
   const data = {};
   for (let i = 4; i <= 894; i++) {
-    const code = i.toString();
-    data[code] = [Math.random().toFixed(2), Math.random().toFixed(2)];
+    data[i.toString()] = [Math.random().toFixed(2), Math.random().toFixed(2)];
   }
   return data;
 }
@@ -82,16 +52,8 @@ const data = generateData();
 
 // 3x3 bivariate color scale
 const colorScale = d3.scaleOrdinal()
-  .domain([
-    "0-0","0-1","0-2",
-    "1-0","1-1","1-2",
-    "2-0","2-1","2-2"
-  ])
-  .range([
-    "#e8e8e8","#ace4e4","#5ac8c8",
-    "#dfb0d6","#a5add3","#5698b9",
-    "#be64ac","#8c62aa","#3b4994"
-  ]);
+  .domain(["0-0","0-1","0-2","1-0","1-1","1-2","2-0","2-1","2-2"])
+  .range(["#e8e8e8","#ace4e4","#5ac8c8","#dfb0d6","#a5add3","#5698b9","#be64ac","#8c62aa","#3b4994"]);
 
 function getBivariateKey(var1, var2) {
   const bin1 = Math.floor(var1 * 3);
@@ -101,13 +63,13 @@ function getBivariateKey(var1, var2) {
 
 // Load world TopoJSON
 d3.json("https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json").then(worldData => {
+
   const countryNames = {};
   worldData.objects.countries.geometries.forEach(d => {
     countryNames[d.id] = d.properties ? d.properties.name : "Unknown";
   });
 
   const countries = topojson.feature(worldData, worldData.objects.countries).features;
-
   let active = null;
 
   const countryPaths = g.selectAll("path")
@@ -141,70 +103,73 @@ d3.json("https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json").then(w
       tooltip.transition().duration(200).style("opacity", 0);
     })
     .on("click", (event, d) => {
-      if (active === d) {
-        resetZoom();
-        active = null;
-      } else {
-        zoomToCountry(d);
-        active = d;
-      }
+      if (active === d) { resetZoom(); active = null; } 
+      else { zoomToCountry(d); active = d; }
       event.stopPropagation();
     });
 
   // Legend
   const legendContainer = d3.select("#legend");
-  const legendKeys = colorScale.domain();
   legendContainer.selectAll("div")
-    .data(legendKeys)
+    .data(colorScale.domain())
     .enter()
     .append("div")
     .style("background-color", d => colorScale(d));
 
-  // D3 zoom behavior (pan and scroll)
+  // Zoom behavior (pan + scroll)
   const zoom = d3.zoom()
     .scaleExtent([1, 8])
-    .on("zoom", (event) => {
-      g.attr("transform", event.transform);
-    });
+    .on("zoom", (event) => { g.attr("transform", event.transform); });
 
   svg.call(zoom);
 
-  // Zoom to country function
+  // Enhanced zoom to country
   function zoomToCountry(d) {
-    const bounds = path.bounds(d);
-    const dx = bounds[1][0] - bounds[0][0];
-    const dy = bounds[1][1] - bounds[0][1];
-    const x = (bounds[0][0] + bounds[1][0]) / 2;
-    const y = (bounds[0][1] + bounds[1][1]) / 2;
-    const k = Math.min(8, 0.9 / Math.max(dx / width, dy / height));
+  // Get bounding box in pixel space
+  const bounds = path.bounds(d);  // [[x0,y0],[x1,y1]]
+  const dx = bounds[1][0] - bounds[0][0];
+  const dy = bounds[1][1] - bounds[0][1];
 
-    svg.transition()
-       .duration(750)
-       .call(
-         zoom.transform,
-         d3.zoomIdentity
-           .translate(width / 2, height / 2)
-           .scale(k)
-           .translate(-x, -y)
-       );
-  }
+  // Add some padding
+  const padding = 20;
 
-  // Reset to world map
+  // Compute scale to fit width and height inside viewport with padding
+  let scale = Math.min(8, 0.9 / Math.max(dx / (width - padding), dy / (height - padding)));
+
+  // Minimum zoom for small countries
+  scale = Math.max(scale, 2);
+
+  // Compute projected centroid
+  const centroid = d3.geoCentroid(d);
+  const [cx, cy] = projection(centroid);
+
+  // Compute translation to center country in viewport
+  const translateX = width / 2 - scale * cx;
+  const translateY = height / 2 - scale * cy;
+
+  // Smooth zoom
+  svg.transition()
+     .duration(750)
+     .call(
+       zoom.transform,
+       d3.zoomIdentity
+         .translate(translateX, translateY)
+         .scale(scale)
+     );
+}
+
+
+
+  // Reset zoom to full world
   function resetZoom() {
     svg.transition()
        .duration(750)
-       .call(
-         zoom.transform,
-         d3.zoomIdentity
-       );
+       .call(zoom.transform, d3.zoomIdentity);
   }
 
-  // Click background to reset zoom
+  // Click background to reset
   svg.on("click", (event) => {
-    if (event.target.tagName === 'svg') {
-      resetZoom();
-      active = null;
-    }
+    if (event.target.tagName === 'svg') { resetZoom(); active = null; }
   });
 
 });
