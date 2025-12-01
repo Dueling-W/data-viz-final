@@ -11,25 +11,63 @@
 
     <style>
 
-        .container{
-            background-color:azure;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            margin: 50px;
+        body { font-family: sans-serif; }
+
+        /* NEW: Border around the map */
+        #map-container {
+            width: 960px;
+            height: 600px;
+            border: 3px solid black;
+            display: inline-block;
+        }
+
+        svg { width: 100%; height: 100%; cursor: grab; }
+
+        .country { 
+            stroke: #fff; 
+            stroke-width: 0.5px; 
+            transition: stroke-width 0.15s ease; 
+        }
+        #legend-container {
+            position: relative;
+            padding-left: 40px; /* space for vertical label */
+            padding-top: 10px; /* space for horizontal label */
+        }
+
+        .bivariate-legend {
+            display: grid;
+            grid-template-columns: repeat(3, 40px);
+            grid-template-rows: repeat(3, 40px);
+            gap: 2px;
+            position: relative;
+        }
+
+        .legend-cell {
+            width: 40px;
+            height: 40px;
+        }
+        .legend-axis-label {
+            font-size: 12px;
+            position: absolute;
+            font-weight:bold;
+            color: #444;
+        }
+
+
+        .tooltip {
+            position: absolute;
+            background: rgba(0,0,0,0.8);
+            color: #fff;
+            padding: 5px 10px;
+            border-radius: 4px;
+            pointer-events: none;
         }
 
         h1 {
-            font-family:Arial, Helvetica, sans-serif;
-            text-align:center;
+            font-family: sans-serif;
+            text-align: center;
+            font-weight: bold;
         }
-
-        .linecharts {
-            display:flex;
-            flex-direction: row;
-        }
-
 
     </style>
 
@@ -40,35 +78,42 @@
 
 
 <body>
+    <h1>W Project</h1>
 
-    <div class="container">
-        <div class="worldmap">
-            <h1>World Population (2024)</h1>
-        </div>
-        <div class="worldmap2">
-            <h1>Total CO2 Emissions (2023)</h1>
-        </div>
-        <div class="linecharts">
-            <div class=chart1></div>
-            <div class="chart2"></div>
-        </div>
+    <div id="year-controls" style="margin: 10px 0;">
+        <label for="yearSlider">
+            Year:
+            <span id="yearValue">1970</span> <!-- will be updated by JS -->
+        </label>
+        <input type="range" id="yearSlider" min="1960" max="2024" step="1" value="1970">
     </div>
+
+
+    <div id="map-container">
+        <svg></svg>
+    </div>
+
+    <div>
+        <div id="legend-container">
+            <div id="legend" class="bivariate-legend"></div>
+        </div>
+
+    </div>
+
+    <div class="tooltip" id="tooltip" style="opacity:0"></div>
 
 
     <script>
         
         let countriesGeo = "data/countries.geojson"
-        let populationData = "data/population_data.csv"
-        let co2Data = "data/total_co2_data.csv"
+        let populationData = "data/population_density_data.csv"
+        let co2Data = "data/co2_capita_data.csv"
 
-        const window_dims = {
-            width: window.innerWidth,
-            height: window.innerHeight
-        };
+        const width = 960;
+        const height = 600;
 
-
-        const svgWidth = window_dims.width-150;
-        const svgHeight = window_dims.height-150;
+        const svg = d3.select("svg").attr("width", width).attr("height", height);
+        const g = svg.append("g");
 
 
         Promise.all([d3.json(countriesGeo), d3.csv(populationData), d3.csv(co2Data)], // asynchronous load of both data sources using promise.all()
@@ -78,63 +123,258 @@
                 let geoJson = data[0]
                 let popData = data[1]
                 let co2Data = data[2]
+                
+                const popYearCols = popData.columns.filter(c => /^\d{4}$/.test(c));
+                const co2YearCols = co2Data.columns.filter(c => /^\d{4}$/.test(c));
+
+                // 2) Keep only years present in BOTH datasets
+                var availableYears = popYearCols.filter(y => co2YearCols.includes(y));
+                availableYears = availableYears.filter(item => item !== "1960")
+                availableYears = availableYears.filter(item => item !== "2024")
 
 
-                const generateWorldMap = (geoJson,containerName,width,height,margin=30) => {
+                console.log(availableYears)
 
-                    const svg = d3.select(containerName).append("svg")
-                        .attr("width", width)
-                        .attr("height", height);
-                    
+
+                // 3) Compute min / max year and pick an initial year
+                const minYear = d3.min(availableYears, d => +d);
+                const maxYear = d3.max(availableYears, d => +d);
+                let selectedYear = String(minYear);  // e.g. "1960"
+
+                const yearSlider = d3.select("#yearSlider")
+                    .attr("min", minYear)
+                    .attr("max", maxYear)
+                    .attr("value", selectedYear);
+
+                const yearLabel = d3.select("#yearValue")
+                    .text(selectedYear);
+
+                
+                const generateWorldMap = (geoJson, containerName, width, height, margin = 30) => {
+
+                    // NEW: clear out previous map and legend so we don't stack elements
+                    g.selectAll("*").remove();
+                    d3.select("#legend").selectAll("*").remove();
+
+                    // 1) Recompute quantiles for the CURRENT selectedYear
+                    const co2Vals = co2Data
+                        .map(d => +d[selectedYear])
+                        .filter(v => !isNaN(v));   // drop missing
+
+                    const co2Quant = d3.scaleQuantile()
+                        .domain(co2Vals.map(v => Math.log10(v + 1)))
+                        .range([0, 1, 2]);
+
+                    const popVals = popData
+                        .map(d => +d[selectedYear])
+                        .filter(v => !isNaN(v));
+
+                    const popQuant = d3.scaleQuantile()
+                        .domain(popVals.map(v => Math.log10(v + 1)))
+                        .range([0, 1, 2]);
+
+                    function getBivariateKey(co2, pop) {
+                        if (co2 == null || pop == null || isNaN(co2) || isNaN(pop)) {
+                            return null; // or "no-data"
+                        }
+                        const bin1 = co2Quant(Math.log10(co2 + 1));
+                        const bin2 = popQuant(Math.log10(pop + 1));
+                        return `${bin1}-${bin2}`;
+                    }
+
+                    console.log("Using year:", selectedYear);
+                    console.log("pop domain:", popQuant.domain());
+                    console.log("pop quantiles:", popQuant.quantiles());
+
+                    let active = null; // used for zoom
+
+                    // IMPORTANT CHANGE: do NOT redeclare svg/g here, reuse outer ones
+                    // const svg = d3.select("svg")...  <-- remove this line
+                    // const g = svg.append("g");      <-- and this line
+
                     // create array of 3 character long country codes (i.e. USA)
                     let countries = [];
-                    geoJson.features.forEach(d => {countries.push(d.properties["ISO3166-1-Alpha-3"])})
-                    
-                    let filteredPopData = []
+                    geoJson.features.forEach(d => { countries.push(d.properties["ISO3166-1-Alpha-3"]); });
+
+                    let filteredPopData = [];
                     popData.forEach(d => {
-                        if(countries.includes(d["Country Code"])) {
-                            filteredPopData.push(d)
+                        if (countries.includes(d["Country Code"])) {
+                            filteredPopData.push(d);
                         }
-                    })
+                    });
 
-                    let popExtent = d3.extent(filteredPopData, (d) => {return +d[2024]})
-                    console.log(popExtent)
+                    let filteredCO2Data = [];
+                    co2Data.forEach(d => {
+                        if (countries.includes(d["Country Code"])) {
+                            filteredCO2Data.push(d);
+                        }
+                    });
 
-                    // https://colorbrewer2.org/#type=diverging&scheme=RdBu&n=5
-                    const colorInterpolator = d3.interpolateRgbBasis(["#ca0020", "#f4a582", "#f7f7f7", "#92c5de", "#0571b0"].reverse())
-                    const logScale = d3.scaleLog().domain(popExtent)
 
-                    let projection = d3.geoEquirectangular()
-                                        .fitSize([width-margin, height-margin], geoJson)
+                    const colorScale = d3.scaleOrdinal()
+                        .domain(["0-0","0-1","0-2","1-0","1-1","1-2","2-0","2-1","2-2"])
+                        .range(["#e8e8e8","#ace4e4","#5ac8c8",
+                                "#dfb0d6","#a5add3","#5698b9",
+                                "#be64ac","#8c62aa","#3b4994"]);
 
-                    let geoGenerator = d3.geoPath()
-                        .projection(d3.geoEquirectangular().fitSize([width-margin,height-margin], geoJson))
+                    const projection = d3.geoMercator().scale(150).translate([width / 2, height / 1.5]);
+                    const path = d3.geoPath().projection(projection);
+                    const tooltip = d3.select("#tooltip");
 
-                    
-
-                    svg.selectAll("path")
+                    g.selectAll("path")
                         .data(geoJson.features)
                         .enter()
                         .append("path")
-                        .attr("d", geoGenerator)
+                        .attr("class", "country")
+                        .attr("d", path)
                         .attr("fill", d => {
-                            try{
-                                let currentCode = d.properties["ISO3166-1-Alpha-3"]
-                                let countryData = filteredPopData.find(i => i["Country Code"] === currentCode)
-                                return colorInterpolator(logScale(countryData[2024]))
-                            }
-                            catch (error)
-                            {
-                                // in the case of counties with no data;
+                            try {
+                                let currentCode = d.properties["ISO3166-1-Alpha-3"];
+                                let allPopData = filteredPopData.find(i => i["Country Code"] === currentCode);
+                                let popVal = allPopData[selectedYear];
+
+                                let allCO2Data = filteredCO2Data.find(i => i["Country Code"] === currentCode);
+                                let co2Val = allCO2Data[selectedYear];
+
+                                return colorScale(getBivariateKey(+co2Val, +popVal));
+                            } catch (error) {
+                                // in the case of countries with no data
                                 return "gray";
                             }
                         })
+                        .on("mouseover", function (event, d) {
+                            let currentCode = d.properties["ISO3166-1-Alpha-3"];
+                            let allPopData = filteredPopData.find(i => i["Country Code"] === currentCode);
+                            let popVal = allPopData ? allPopData[selectedYear] : null;
 
+                            let allCO2Data = filteredCO2Data.find(i => i["Country Code"] === currentCode);
+                            let co2Val = allCO2Data ? allCO2Data[selectedYear] : null;
 
-                }
-                generateWorldMap(geoJson,".worldmap",svgWidth,svgHeight)
+                            const fmt3 = d3.format(",.3f");
 
-                const generateCO2Map = (geoJson,containerName,width,height,margin=30) => {
+                            tooltip.transition().duration(150).style("opacity", 1);
+                            tooltip.html(`
+                                <strong>${d.properties.name || "Unknown"}</strong><br>
+                                Population Density (${selectedYear}): ${popVal ? fmt3(popVal) : "N/A"}<br>
+                                CO₂ per Capita (${selectedYear}): ${co2Val ? fmt3(co2Val) : "N/A"}
+                            `)
+                            .style("left", (event.pageX + 10) + "px")
+                            .style("top", (event.pageY - 28) + "px");
+
+                            const [cx, cy] = path.centroid(d);
+
+                            d3.select(this)
+                                .raise()
+                                .transition().duration(150)
+                                .style("stroke", "#000")
+                                .style("stroke-width", 1.2)
+                                .attr("transform",
+                                    `translate(${cx},${cy}) scale(1.03) translate(${-cx},${-cy})`
+                                );
+                        })
+                        .on("mousemove", (event) => {
+                            tooltip.style("left", (event.pageX + 10) + "px")
+                                    .style("top", (event.pageY - 28) + "px");
+                        })
+                        .on("mouseout", function () {
+                            tooltip.transition().duration(150).style("opacity", 0);
+
+                            d3.select(this)
+                                .transition().duration(150)
+                                .style("stroke", "#fff")
+                                .style("stroke-width", 0.5)
+                                .attr("transform", null);
+                        })
+                        .on("click", (event, d) => {
+                            if (active === d) { resetZoom(); active = null; }
+                            else { zoomToCountry(d); active = d; }
+                            event.stopPropagation();
+                        });
+
+                    // Legend (recreated each time)
+                    const legendData = [
+                        ["0-2", "1-2", "2-2"],
+                        ["0-1", "1-1", "2-1"],
+                        ["0-0", "1-0", "2-0"]
+                    ];
+
+                    const legend = d3.select("#legend");
+
+                    legend
+                        .selectAll(".legend-cell")
+                        .data(legendData.flat())
+                        .enter()
+                        .append("div")
+                        .attr("class", "legend-cell")
+                        .style("background-color", d => colorScale(d));
+
+                    legend.append("div")
+                        .attr("class", "legend-axis-label")
+                        .style("left", "0px")
+                        .style("top", "125px")
+                        .text("Higher CO₂ per capita →");
+
+                    legend.append("div")
+                        .attr("class", "legend-axis-label")
+                        .style("position", "absolute")
+                        .style("left", "-76px")
+                        .style("top", "50px")
+                        .style("transform", "rotate(-90deg)")
+                        .text("Higher pop. density →");
+
+                    // Zoom behavior unchanged, but we must define zoom/reset/zoomToCountry
+                    const zoom = d3.zoom()
+                        .scaleExtent([1, 8])
+                        .on("zoom", (event) => { g.attr("transform", event.transform); });
+
+                    svg.call(zoom);
+
+                    function zoomToCountry(d) {
+                        const bounds = path.bounds(d);
+                        const dx = bounds[1][0] - bounds[0][0];
+                        const dy = bounds[1][1] - bounds[0][1];
+                        const padding = 20;
+
+                        let scale = Math.min(8, 0.9 / Math.max(dx / (width - padding), dy / (height - padding)));
+                        scale = Math.max(scale, 2);
+
+                        const centroid = d3.geoCentroid(d);
+                        const [cx, cy] = projection(centroid);
+
+                        const translateX = width / 2 - scale * cx;
+                        const translateY = height / 2 - scale * cy;
+
+                        svg.call(
+                            zoom.transform,
+                            d3.zoomIdentity
+                                .translate(translateX, translateY)
+                                .scale(scale)
+                        );
+                    }
+
+                    function resetZoom() {
+                        svg.call(zoom.transform, d3.zoomIdentity);
+                    }
+
+                    svg.on("click", (event) => {
+                        if (event.target.tagName === 'svg') { resetZoom(); active = null; }
+                    });
+                };
+
+                generateWorldMap(geoJson,".worldmap",width,height)
+
+                yearSlider.on("input", function() {
+                    selectedYear = this.value;         // keep as string
+                    yearLabel.text(selectedYear);      // update text above slider
+                });
+
+                yearSlider.on("change", function() {
+                    selectedYear = this.value;         // keep as string
+                    yearLabel.text(selectedYear);      // update text above slider
+                    generateWorldMap(geoJson, ".worldmap", width, height);
+                })
+
+                /* const generateCO2Map = (geoJson,containerName,width,height,margin=30) => {
 
                     const svg = d3.select(containerName).append("svg")
                         .attr("width", width)
@@ -243,7 +483,7 @@
 
 
                 }
-                generateLineCharts(geoJson,svgWidth, svgHeight)
+                generateLineCharts(geoJson,svgWidth, svgHeight) */
 
 
                 
