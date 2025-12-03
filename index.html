@@ -233,6 +233,12 @@
         const width = container.clientWidth;
         const height = container.clientHeight;
 
+        const co2Svg = d3.select("#countryCo2");
+        const popSvg = d3.select("#countryPop");
+
+        const co2Box = co2Svg.node().getBoundingClientRect();
+        const popBox = popSvg.node().getBoundingClientRect();
+
         const svg = d3.select("#map")
             .attr("width", width)
             .attr("height", height);
@@ -288,7 +294,7 @@
 
 
 
-            function updateCountryDetail(countryName, series) {
+            function updateCountryDetail(countryName, series, co2Box, popBox) {
                 const { years, co2Series, popSeries } = series;
 
                 // --- 1. Update title text ---
@@ -297,10 +303,6 @@
                 // --- 2. Setup SVG references & sizes ---
                 const co2Svg = d3.select("#countryCo2");
                 const popSvg = d3.select("#countryPop");
-
-                // Use layout-driven sizes (from CSS/flexbox)
-                const co2Box = co2Svg.node().getBoundingClientRect();
-                const popBox = popSvg.node().getBoundingClientRect();
 
                 const co2Width  = co2Box.width  || 300;
                 const co2Height = co2Box.height || 200;
@@ -657,7 +659,7 @@
                             let countryCode = d.properties["ISO3166-1-Alpha-3"];
                             let series = getCountrySeries(countryCode)
                             let countryName = series.co2Row['Country Name'];
-                            updateCountryDetail(countryName, series);
+                            updateCountryDetail(countryName, series, co2Box, popBox);
                         }
                         event.stopPropagation();
                     });
