@@ -7,19 +7,24 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <script src="./libs/d3.js"></script>
     <script src="libs/d3jstopojson.v1.js"></script>
-    <title>Final Project</title>
+    <title>Final Project - CIS 568</title>
 
     <style>
-        body { font-family: sans-serif; 
-                background-color: azure;
-        }
+        body { font-family: sans-serif; background-color: azure; }
 
-        /* Main horizontal layout: left = map, right = charts */
+        /* flex container for map + stacked area charts */
         .container {
             display: flex;
             width: 98vw;
         }
 
+
+        .map-pane {
+            flex: 0 0 auto;
+            border: none;
+        }
+
+        /* sits inside of map-pane */
         #map-container {
             width: 1100px;
             height: 550px;
@@ -27,12 +32,9 @@
             background-color: white;
         }
 
-        .map-pane {
-            flex: 0 0 auto;
-            border: none;
-        }
 
-        /* Charts stack vertically */
+
+        /* charts stack vertically */
         .charts-pane {
             flex: 1;
             display: flex;
@@ -43,7 +45,7 @@
             overflow-y: auto;
         }
 
-        /* Chart containers */
+        /* container for each chart svg */
         .chart-box {
             flex: 1;
             background: white;
@@ -54,12 +56,15 @@
             align-items: center;
         }
 
+        /* country outline */
         .country {
             stroke: #fff;
             stroke-width: 0.5px;
             transition: stroke-width 0.15s ease;
         }
 
+
+        /* container for legend and the line graphs */
         #bottom-row {
             display: flex;
             padding: 10px 20px;
@@ -75,7 +80,7 @@
             padding-right:20px;
         }
 
-        /* NEW country detail area */
+        /* styling related to the line graphs */
         #country-detail {
             flex: 1;
             display: flex;
@@ -97,16 +102,19 @@
             gap: 20px;
         }
 
-        /* The two small line-chart svgs */
+        /* svg formatting for line graphs */
         #countryCo2,
         #countryPop {
             flex: 1;
-            height: 200px;    /* you can tweak this */
+            height: 200px; 
             border: 1px solid #ddd;
             border-radius: 6px;
             background: white;
         }
 
+
+
+        /* styling for bivariate and stacked area chart legends */
         .bivariate-legend {
             display: grid;
             grid-template-columns: repeat(3, 40px);
@@ -136,26 +144,28 @@
             pointer-events: none;
         }
 
+        /* title only */
         h1 {
             font-family: sans-serif;
             text-align: center;
             font-weight: bold;
         }
 
+        /* styling for top row (year slider and map title) */
         #year-controls {
             display: grid;
             grid-template-columns: 1fr auto 1fr;  /* left | center | right */
             align-items: center;
-            width: 1100px;
+            width: 1100px; /* width equal to width of map */
             margin-bottom: 8px;
         }
 
         #slider-wrap {
-            justify-self: start;   /* lock slider to the left */
+            justify-self: start;   /* slider all the way to left */
         }
 
         #mapTitle {
-            justify-self: center;  /* true centering */
+            justify-self: center;
             font-size: 18px;
             font-weight: bold;
         }
@@ -167,6 +177,7 @@
 <body>
     <h1>Population and CO₂ Global Comparison</h1>
 
+    <!-- top row of page (year slider and map title)-->
     <div id="year-controls">
         
         <div id="slider-wrap">
@@ -176,20 +187,18 @@
 
         <span id="mapTitle">Bivariate CO₂ Per Capita vs. Pop. Density Map</span>
 
-        <div></div> <!-- empty spacer for centering -->
+        <div></div>
     </div>
 
     
-
+    <!-- large container for map + stacked area charts -->
     <div class="container">
-        <!-- LEFT SIDE: MAP -->
         <div class="map-pane">
             <div id="map-container">
                 <svg id="map"></svg>
             </div>
         </div>
 
-        <!-- RIGHT SIDE: STACKED CHARTS -->
         <div class="charts-pane">
             <div class="chart-box">
                 <svg id="chart1"></svg>
@@ -198,8 +207,10 @@
                 <svg id="chart2"></svg>
             </div>
         </div>
+
     </div>
 
+    <!-- bottom row for bivariate legend, country name, and charts -->
     <div id="bottom-row">
         <div id="legend-container">
             <div id="legend" class="bivariate-legend"></div>
@@ -215,6 +226,7 @@
                 <svg id="countryPop"></svg>
             </div>
         </div>
+
     </div>
 
     <div class="tooltip" id="tooltip" style="opacity:0"></div>
@@ -222,22 +234,25 @@
     <script>
 
 
-        let countriesGeo   = "data/countries.geojson";
+        let countriesGeo = "data/countries.geojson"; // geo data
         let populationData = "data/population_density_data.csv";
-        let co2Data        = "data/co2_capita_data.csv";
-        let continentMap   = "data/continentMap.json";
-        let totalCO2Data   = "data/total_co2_data.csv";
+        let co2Data = "data/co2_capita_data.csv";
+        let continentMap = "data/continentMap.json"; // json mapping countries to continents
+        let totalCO2Data = "data/total_co2_data.csv";
         let totalPopData = "data/population_data.csv"
 
+        // width and height of only the map 
         const container = document.getElementById("map-container");
         const width = container.clientWidth;
         const height = container.clientHeight;
 
+        // set initial sizes for co2 and pop line graphs due to weird bug (charts growing...)
         const co2Svg = d3.select("#countryCo2");
         const popSvg = d3.select("#countryPop");
 
         const co2Box = co2Svg.node().getBoundingClientRect();
         const popBox = popSvg.node().getBoundingClientRect();
+
 
         const svg = d3.select("#map")
             .attr("width", width)
@@ -255,52 +270,49 @@
         ],
         d3.autoType())
         .then(data => {
-            let geoJson        = data[0];
-            let popData        = data[1];
-            let co2Data        = data[2];
-            let continentMapData = data[3];   // <-- renamed for clarity
-            let totalCO2Data     = data[4];   // <-- csv with total CO2
+            let geoJson = data[0];
+            let popData = data[1];
+            let co2Data = data[2];
+            let continentMapData = data[3]; 
+            let totalCO2Data = data[4];   
             let totalPopData = data[5]
 
 
-
+            // based on a given country code, return co2 and pop data for all valid years 
+            // 3-digit country code used, i.e., USA
             function getCountrySeries(countryCode) {
-                // Find the rows for this country in each dataset
                 const popRow = popData.find(d => d["Country Code"] === countryCode);
                 const co2Row = co2Data.find(d => d["Country Code"] === countryCode);
 
-                // If we don't find at least one row, bail out
-                if (!popRow && !co2Row) return null;
+                if (!popRow && !co2Row) return null; // if no data for country
 
-                // Make sure years are numbers (for scales later)
                 const years = availableYears.map(y => +y);
 
-                // Build population series (may contain nulls if data missing)
                 const popSeries = years.map(y => {
                     const col = String(y);
                     const v = popRow ? +popRow[col] : NaN;
-                    return isNaN(v) ? null : v;
+                    return isNaN(v) ? null : v; // array of integers (population)
                 });
 
-                // Build CO₂ per capita series
                 const co2Series = years.map(y => {
                     const col = String(y);
                     const v = co2Row ? +co2Row[col] : NaN;
-                    return isNaN(v) ? null : v;
+                    return isNaN(v) ? null : v; // array of integers (co2)
                 });
 
+                // return array of years, pop, co2, along with original rows from .csv file
                 return { years, popSeries, co2Series, popRow, co2Row };
             }
 
 
 
+            // actually draw the charts
             function updateCountryDetail(countryName, series, co2Box, popBox) {
                 const { years, co2Series, popSeries } = series;
 
-                // --- 1. Update title text ---
                 d3.select("#countryName").text(countryName);
 
-                // --- 2. Setup SVG references & sizes ---
+                // sets up SVG with proper sizes from the co2Box and popBox objects
                 const co2Svg = d3.select("#countryCo2");
                 const popSvg = d3.select("#countryPop");
 
@@ -316,22 +328,24 @@
                 const innerPopWidth  = popWidth  - margin.left - margin.right;
                 const innerPopHeight = popHeight - margin.top  - margin.bottom;
 
-                // Ensure SVG elements have explicit size
                 co2Svg.attr("width",  co2Width).attr("height", co2Height);
                 popSvg.attr("width",  popWidth).attr("height", popHeight);
 
-                // Clear previous drawings
+                // clear previous drawings (probably not necessary but just in-case)
                 co2Svg.selectAll("*").remove();
                 popSvg.selectAll("*").remove();
+
 
                 const co2G = co2Svg.append("g")
                     .attr("transform", `translate(${margin.left},${margin.top})`);
                 const popG = popSvg.append("g")
                     .attr("transform", `translate(${margin.left},${margin.top})`);
 
+                // labeling for the co2 svg
+                // yes i know the x and y values are really weird i just played with them until they worked
                 co2Svg.append("text")
                     .attr("class", "y-axis-label")
-                    .attr("x", -co2Height+100)
+                    .attr("x", -co2Height+100) 
                     .attr("y", 11)
                     .attr("transform", "rotate(-90)")
                     .attr("text-anchor", "middle")
@@ -348,7 +362,7 @@
                     .style("font-weight", "bold")
                     .text("Year");
 
-
+                // labeling for the pop svg
                 popSvg.append("text")
                     .attr("class", "y-axis-label")
                     .attr("x", -co2Height+100)
@@ -368,14 +382,14 @@
                     .style("font-weight", "bold")
                     .text("Year");
 
-                // --- 3. Build clean data arrays (skip nulls) ---
+                // skips all null values in the series
                 const co2DataSeries = years.map((y, i) => ({ Year: y, value: co2Series[i] }))
                     .filter(d => d.value != null);
 
                 const popDataSeries = years.map((y, i) => ({ Year: y, value: popSeries[i] }))
                     .filter(d => d.value != null);
 
-                // If no data at all, show a message and bail out for that chart
+                // only triggered if no data is available at all
                 if (co2DataSeries.length === 0) {
                     co2G.append("text")
                         .attr("x", innerCo2Width / 2)
@@ -394,28 +408,30 @@
                         .text("No population data available");
                 }
 
-                // --- 4. Scales ---
 
-                // X domains can still use full year extent (even if some years missing)
+                // year scalers for co2/pop
                 const xCo2 = d3.scaleLinear()
                     .domain(d3.extent(years))
                     .range([0, innerCo2Width]);
 
+                // pop scaler
                 const xPop = d3.scaleLinear()
                     .domain(d3.extent(years))
                     .range([0, innerPopWidth]);
 
+                //co2 scaler
                 const yCo2 = d3.scaleLinear()
                     .domain([0, d3.max(co2DataSeries, d => d.value) || 0])
                     .nice()
                     .range([innerCo2Height, 0]);
 
+                // pop scaler 
                 const yPop = d3.scaleLinear()
                     .domain([0, d3.max(popDataSeries, d => d.value) || 0])
                     .nice()
                     .range([innerPopHeight, 0]);
 
-                // --- 5. Line generators ---
+                // draw the lines
                 const co2Line = d3.line()
                     .defined(d => d.value != null)  // skip gaps
                     .x(d => xCo2(d.Year))
@@ -426,7 +442,9 @@
                     .x(d => xPop(d.Year))
                     .y(d => yPop(d.value));
 
-                // --- 6. CO₂ chart: axes + line + title ---
+
+
+                // co2 chart axes, line, and title
                 co2G.append("g")
                     .attr("transform", `translate(0,${innerCo2Height})`)
                     .call(d3.axisBottom(xCo2).tickFormat(d3.format("d")).ticks(5));
@@ -451,7 +469,9 @@
                     .style("font-weight", "bold")
                     .text("CO₂ per Capita Line Graph");
 
-                // --- 7. Population chart: axes + line + title ---
+
+
+                // pop chart axes, line, and title
                 popG.append("g")
                     .attr("transform", `translate(0,${innerPopHeight})`)
                     .call(d3.axisBottom(xPop).tickFormat(d3.format("d")).ticks(5));
@@ -479,23 +499,24 @@
 
 
 
+            // select years from column
             const popYearCols = popData.columns.filter(c => /^\d{4}$/.test(c));
             const co2YearCols = co2Data.columns.filter(c => /^\d{4}$/.test(c));
 
 
-            // 2) Keep only years present in BOTH datasets
             var availableYears = popYearCols.filter(y => co2YearCols.includes(y));
-            availableYears = availableYears.filter(item => item !== "2024");
+            availableYears = availableYears.filter(item => item !== "2024"); // no data in 2024 despite column existing
 
+            // filter years in the 60s since co2 data has all null values in those years
             availableYears = availableYears.filter(item => !item.startsWith("196"));
 
             console.log(availableYears);
 
-            // 3) Min/max year
-            const minYear = "1970"
+            const minYear = d3.min(availableYears, d => +d);
             const maxYear = d3.max(availableYears, d => +d);
             let selectedYear = String(minYear);
 
+            // set initial values and text for the selected year
             const yearSlider = d3.select("#yearSlider")
                 .attr("min", minYear)
                 .attr("max", maxYear)
@@ -509,12 +530,18 @@
 
 
 
+
+
+
+            // bivariate world map
+
             const generateWorldMap = (geoJson, containerName, width, height, margin = 30) => {
-                // Clear previous map and legend
+                // clear previous map and legend
                 g.selectAll("*").remove();
                 d3.select("#legend").selectAll("*").remove();
 
-                // 1) Quantiles for current year
+
+                // computes quantiles using a log scale for the current year's values
                 const co2Vals = co2Data
                     .map(d => +d[selectedYear])
                     .filter(v => !isNaN(v));
@@ -531,6 +558,8 @@
                     .domain(popVals.map(v => Math.log10(v + 1)))
                     .range([0, 1, 2]);
 
+
+                // maps to a specific bivariate point like (1, 2) based on co2/pop values
                 function getBivariateKey(co2, pop) {
                     if (co2 == null || pop == null || isNaN(co2) || isNaN(pop)) {
                         return null;
@@ -546,8 +575,11 @@
 
                 let active = null;
 
+                // list all countries in geoJson dataset by three digit code
                 let countries = [];
                 geoJson.features.forEach(d => { countries.push(d.properties["ISO3166-1-Alpha-3"]); });
+
+                // filter pop and co2 data to only include countries that exist in the geo dataset
 
                 let filteredPopData = [];
                 popData.forEach(d => {
@@ -563,6 +595,9 @@
                     }
                 });
 
+
+                // maps each value in the domain to a distinct color
+                // values are x-y pairs of squares on the 3x3 bivariate grid
                 const colorScale = d3.scaleOrdinal()
                     .domain(["0-0", "0-1", "0-2", "1-0", "1-1", "1-2", "2-0", "2-1", "2-2"])
                     .range([
@@ -571,10 +606,14 @@
                         "#be64ac", "#8c62aa", "#3b4994"
                     ]);
 
-                const projection = d3.geoMercator().scale(145).translate([width / 2, height / 2 +85]);
+
+
+                const projection = d3.geoMercator().scale(145).translate([width / 2, height / 2 +85]); // 85 offset just removes antartica basically
                 const path = d3.geoPath().projection(projection);
                 const tooltip = d3.select("#tooltip");
 
+
+                
                 g.selectAll("path")
                     .data(geoJson.features)
                     .enter()
@@ -592,7 +631,7 @@
 
                             return colorScale(getBivariateKey(+co2Val, +popVal));
                         } catch (error) {
-                            return "gray";
+                            return "gray"; // fallback to gray coloring
                         }
                     })
                     .on("mouseover", function (event, d) {
@@ -603,8 +642,9 @@
                         let allCO2Data = filteredCO2Data.find(i => i["Country Code"] === currentCode);
                         let co2Val = allCO2Data ? allCO2Data[selectedYear] : null;
 
-                        const fmt3 = d3.format(",.3f");
+                        const fmt3 = d3.format(",.3f"); // format to 3 decimal points
 
+                        // square tooltip for countries
                         tooltip.transition().duration(150).style("opacity", 1);
                         tooltip.html(`
                             <strong>${d.properties.name || "Unknown"}</strong><br>
@@ -616,6 +656,7 @@
 
                         const [cx, cy] = path.centroid(d);
 
+                        // slightly raises and changes the outline when country is hovered
                         d3.select(this)
                             .raise()
                             .transition().duration(150)
@@ -626,10 +667,12 @@
                             );
                     })
                     .on("mousemove", (event) => {
+                        // just updates the tooltip's position
                         tooltip.style("left", (event.pageX + 10) + "px")
                             .style("top", (event.pageY - 28) + "px");
                     })
                     .on("mouseout", function () {
+                        // transition out and lower (un-raise??) the country
                         tooltip.transition().duration(150).style("opacity", 0);
 
                         d3.select(this)
@@ -640,6 +683,7 @@
                     })
                     .on("click", (event, d) => {
 
+                        // clear the co2 and svg line graphs, reset country name to default
                         const co2Svg = d3.select("#countryCo2");
                         const popSvg = d3.select("#countryPop");
                         co2Svg.selectAll("*").remove();
@@ -647,15 +691,17 @@
 
                         d3.select("#countryName").text("Click a country on the map")
 
-                        
+                        // only true if you are currently zoomed into a country
                         if (active === d) { 
+                            // so reset back to overall view
                             resetZoom(); 
                             active = null; 
-                            
                         }
                         else { 
-                            zoomToCountry(d); 
+                            zoomToCountry(d);
                             active = d; 
+
+                            // get the name of the current country, update line graphs accordingly
                             let countryCode = d.properties["ISO3166-1-Alpha-3"];
                             let series = getCountrySeries(countryCode)
                             let countryName = series.co2Row['Country Name'];
@@ -666,7 +712,7 @@
                 
 
 
-                // Legend
+                // 3x3 legend
                 const legendData = [
                     ["0-2", "1-2", "2-2"],
                     ["0-1", "1-1", "2-1"],
@@ -681,8 +727,8 @@
                     .enter()
                     .append("div")
                     .attr("class", "legend-cell")
-                    .style("background-color", d => colorScale(d));
-
+                    .style("background-color", d => colorScale(d)); // color the square based on its value ex: (2,2) is blue
+                
                 legend.append("div")
                     .attr("class", "legend-axis-label")
                     .style("left", "0px")
@@ -696,15 +742,17 @@
                     .style("top", "50px")
                     .style("transform", "rotate(-90deg)")
                     .text("Higher pop. density →");
-
+                
+                // simple zoom + pan
                 const zoom = d3.zoom()
                     .scaleExtent([1, 8])
                     .on("zoom", (event) => { g.attr("transform", event.transform); });
 
                 svg.call(zoom);
 
+                // zooms into the country
                 function zoomToCountry(d) {
-                    const bounds = path.bounds(d);
+                    const bounds = path.bounds(d); // bounds of country from geoData
                     const dx = bounds[1][0] - bounds[0][0];
                     const dy = bounds[1][1] - bounds[0][1];
                     const padding = 20;
@@ -730,6 +778,8 @@
                     svg.call(zoom.transform, d3.zoomIdentity);
                 }
 
+
+                // if the user clicks on the svg BUT not a country, still need to reset the zoom and clear the charts
                 svg.on("click", (event) => {
                     if (event.target.tagName === 'svg') { 
                         resetZoom(); 
@@ -748,11 +798,14 @@
 
             generateWorldMap(geoJson, "#map", width, height);
 
+
+
             yearSlider.on("input", function () {
                 selectedYear = this.value;
                 yearLabel.text(selectedYear);
             });
 
+            // make sure to only update the map once the user stops dragging, otherwise it is extremely laggy
             yearSlider.on("change", function () {
                 selectedYear = this.value;
                 yearLabel.text(selectedYear);
@@ -763,16 +816,15 @@
 
 
 
+
             
-            // ===== STACKED CO2 AREA CHART =====
+            // co2 area chart
             const generateCO2Map = (continentMap, totalCO2Data) => {
-                // 1) Select the SVG for chart1
                 const svgChart = d3.select("#chart1");
 
-                // Clear previous contents (optional, good for re-draws)
                 svgChart.selectAll("*").remove();
 
-                // 2) Get the size from the parent .chart-box
+                // get true size from the doc element
                 const chartBox = document.getElementById("chart1").parentNode;
                 const svgWidth  = chartBox.clientWidth  || 400;
                 const svgHeight = chartBox.clientHeight || 250;
@@ -781,7 +833,7 @@
                     .attr("width", svgWidth)
                     .attr("height", svgHeight);
 
-                // 3) Margins + inner drawing area
+                // margins and define inner width
                 const margin = { top: 40, right: 130, bottom: 40, left: 70 },
                       innerWidth  = svgWidth  - margin.left - margin.right,
                       innerHeight = svgHeight - margin.top  - margin.bottom;
@@ -791,39 +843,39 @@
 
                 const tooltip = d3.select(".tooltip");
 
-                // ---- 1. Get list of year columns ----
-                const years = totalCO2Data.columns.slice(4);
+                const years = totalCO2Data.columns.slice(4); // first four values are not actually years
 
-                // ---- 2. Aggregate by continent ----
+                
                 const continentAgg = {};
                 totalCO2Data.forEach(d => {
                     const continent = continentMap[d["Country Name"]];
                     if (!continent) return;
-                    if (!continentAgg[continent]) continentAgg[continent] = {};
+                    if (!continentAgg[continent]) continentAgg[continent] = {}; // initialize continent bucket when first encountered
                     years.forEach(y => {
-                        const val = parseFloat(d[y]);
+                        const val = parseFloat(d[y]); // get co2 data for the current year
                         if (!isNaN(val)) {
-                            continentAgg[continent][y] = (continentAgg[continent][y] || 0) + val;
+                            continentAgg[continent][y] = (continentAgg[continent][y] || 0) + val; // simply sum the values (fallback is 0)
                         }
                     });
                 });
 
-                // ---- 3. Convert to array for stacking ----
+                // convert to a stacked array where each element is a year with continent values
                 const stackedArray = years.map(y => {
-                    const row = { Year: +y };
+                    const row = { Year: +y }; // first element is the year
                     Object.keys(continentAgg).forEach(c => {
                         const val = continentAgg[c][y];
-                        if (val !== undefined) row[c] = val;
+                        if (val !== undefined) row[c] = val; // add value for that continent to current row
                     });
                     return row;
-                }).filter(d => Object.keys(d).length > 1);
+                }).filter(d => Object.keys(d).length > 1); // only include years that have continent values
 
-                const continents = Object.keys(continentAgg);
+
+                const continents = Object.keys(continentAgg); // just the name of the continents
 
                 const stack = d3.stack().keys(continents);
                 const series = stack(stackedArray);
 
-                // ---- 4. Scales ----
+               // scale for X and Y axes
                 const x = d3.scaleLinear()
                     .domain(d3.extent(stackedArray, d => d.Year))
                     .range([0, innerWidth]);
@@ -832,16 +884,17 @@
                     .domain([0, d3.max(series, s => d3.max(s, d => d[1]))])
                     .range([innerHeight, 0]);
 
+                // maps each continent to their own color
                 const color = d3.scaleOrdinal(d3.schemeCategory10)
                     .domain(continents);
 
-                // ---- 5. Area generator ----
+                
                 const area = d3.area()
                     .x(d => x(d.data.Year))
                     .y0(d => y(d[0]))
                     .y1(d => y(d[1]));
 
-                // ---- 6. Layers ----
+                // layer the area charts on top of each other
                 const layers = gChart.selectAll(".layer")
                     .data(series)
                     .join("path")
@@ -849,6 +902,7 @@
                     .attr("d", area)
                     .attr("fill", d => color(d.key))
                     .on("mouseover", function (event, d) {
+                        // changes opacity of hovered continent and other continents
                         layers.attr("opacity", 0.2);
                         d3.select(this).attr("opacity", 1).raise();
                         tooltip.style("opacity", 1);
@@ -865,11 +919,13 @@
                         }
                     })
                     .on("mouseout", function () {
+                        // resets layers to full opacity, clears tooltip
                         layers.attr("opacity", 1);
                         tooltip.style("opacity", 0);
                     });
 
-                // ---- 7. Axes ----
+
+                // create the axes, axes labels, and chart title
                 gChart.append("g")
                     .attr("transform", `translate(0,${innerHeight})`)
                     .call(d3.axisBottom(x).tickFormat(d3.format("d")));
@@ -906,7 +962,7 @@
                     .text("Year");
 
 
-                // ---- 8. Legend ----
+                // legend that displays to the right of the chart
                 const legend = svgChart.append("g")
                     .attr("transform", `translate(${margin.left + innerWidth + 15},${margin.top})`);
 
@@ -933,15 +989,13 @@
 
 
 
-            // ==== STACKED POPULATION AREA CHART IN #chart2 ====
+            // stacked population area chart in the #chart2 svg
+            // essentially identical to CO2 map
             const generatePopMap = (continentMap, totalPopData) => {
-                // 1) Select the SVG for chart2
                 const svgChart = d3.select("#chart2");
 
-                // Clear previous contents (good if you ever re-draw)
                 svgChart.selectAll("*").remove();
 
-                // 2) Get the size from the parent .chart-box
                 const chartBox = document.getElementById("chart2").parentNode;
                 const svgWidth  = chartBox.clientWidth  || 400;
                 const svgHeight = chartBox.clientHeight || 250;
@@ -950,7 +1004,6 @@
                     .attr("width", svgWidth)
                     .attr("height", svgHeight);
 
-                // 3) Margins + inner drawing area
                 const margin = { top: 40, right: 130, bottom: 40, left: 70 },
                     innerWidth  = svgWidth  - margin.left - margin.right,
                     innerHeight = svgHeight - margin.top  - margin.bottom;
@@ -960,10 +1013,8 @@
 
                 const tooltip = d3.select(".tooltip");
 
-                // ---- 1. Get list of year columns ----
                 const years = totalPopData.columns.slice(4);  // assumes same structure as CO2 CSV
 
-                // ---- 2. Aggregate population by continent ----
                 const continentAgg = {};
                 totalPopData.forEach(d => {
                     const continent = continentMap[d["Country Name"]];
@@ -977,7 +1028,6 @@
                     });
                 });
 
-                // ---- 3. Convert to array for stacking ----
                 const stackedArray = years.map(y => {
                     const row = { Year: +y };
                     Object.keys(continentAgg).forEach(c => {
@@ -992,7 +1042,6 @@
                 const stack = d3.stack().keys(continents);
                 const series = stack(stackedArray);
 
-                // ---- 4. Scales ----
                 const x = d3.scaleLinear()
                     .domain(d3.extent(stackedArray, d => d.Year))
                     .range([0, innerWidth]);
@@ -1004,13 +1053,11 @@
                 const color = d3.scaleOrdinal(d3.schemeCategory10)
                     .domain(continents);
 
-                // ---- 5. Area generator ----
                 const area = d3.area()
                     .x(d => x(d.data.Year))
                     .y0(d => y(d[0]))
                     .y1(d => y(d[1]));
 
-                // ---- 6. Layers ----
                 const layers = gChart.selectAll(".layer")
                     .data(series)
                     .join("path")
@@ -1052,13 +1099,12 @@
                     .style("font-weight", "bold")
                     .text("Global Population by Continent");
                 
-                // ---- 7. Axes ----
                 gChart.append("g")
                     .attr("transform", `translate(0,${innerHeight})`)
                     .call(d3.axisBottom(x).tickFormat(d3.format("d")));
 
                 gChart.append("g")
-                    .call(d3.axisLeft(y).tickFormat(d3.format(".2s"))); // nice compact 1M, 10M, etc.
+                    .call(d3.axisLeft(y).tickFormat(d3.format(".2s"))); // compact numbering in scientifc notation 1M, 10M, etc.
                 
                 
                 gChart.append("text")
@@ -1080,7 +1126,6 @@
                     .style("font-weight", "bold")
                     .text("Year");
 
-                // ---- 8. Legend ----
                 const legend = svgChart.append("g")
                     .attr("transform", `translate(${margin.left + innerWidth + 15},${margin.top})`);
 
@@ -1103,29 +1148,6 @@
 
 
             generatePopMap(continentMapData, totalPopData);
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
         });
     </script>
