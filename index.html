@@ -560,13 +560,19 @@
 
                             const fmt3 = d3.format(",.3f"); // format to 3 decimal points
 
+                            // small bug fix to account for right side of the screen
+                            let offset = 0;
+                            if(year >= 2010) {
+                                offset = 237
+                            }
+
                             tooltip
                                 .style("opacity", 1)
                                 .html(`
                                 Year: ${year}<br>
                                 Population Density: ${fmt3(value)}
                                 `)
-                                .style("left", (event.pageX + 10) + "px")
+                                .style("left", (event.pageX + 10-offset) + "px")
                                 .style("top",  (event.pageY - 28) + "px");
                         })
                         .on("mouseout", function () {
