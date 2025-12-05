@@ -144,6 +144,15 @@
             pointer-events: none;
         }
 
+        .tooltipLineGraphs {
+            position: absolute;
+            background: rgba(0, 0, 0, 0.8);
+            color: #fff;
+            padding: 5px 10px;
+            border-radius: 4px;
+            pointer-events: none;
+        }
+
         /* title only */
         h1 {
             font-family: sans-serif;
@@ -231,6 +240,9 @@
 
     <div class="tooltip" id="tooltip" style="opacity:0"></div>
 
+    <div class="tooltipLineGraphs" id="tooltipLineGraphs" style="opacity:0"></div>
+
+
     <script>
 
 
@@ -311,6 +323,8 @@
                 const { years, co2Series, popSeries } = series;
 
                 d3.select("#countryName").text(countryName);
+                const tooltip = d3.select("#tooltipLineGraphs");
+
 
                 // sets up SVG with proper sizes from the co2Box and popBox objects
                 const co2Svg = d3.select("#countryCo2");
@@ -334,6 +348,8 @@
                 // clear previous drawings (probably not necessary but just in-case)
                 co2Svg.selectAll("*").remove();
                 popSvg.selectAll("*").remove();
+
+
 
 
                 const co2G = co2Svg.append("g")
@@ -452,13 +468,49 @@
                 co2G.append("g")
                     .call(d3.axisLeft(yCo2));
 
+                const bisectYear = d3.bisector(d => d.Year).left;   // data sorted by Year!
+
                 if (co2DataSeries.length > 0) {
                     co2G.append("path")
                         .datum(co2DataSeries)
                         .attr("fill", "none")
                         .attr("stroke", "#1f77b4")
-                        .attr("stroke-width", 2)
-                        .attr("d", co2Line);
+                        .attr("stroke-width", 7)
+                        .attr("d", co2Line)
+                        .on("mousemove", function (event, dataArray) {     // dataArray is the full array
+                            // get current mouse x/y
+                            const [mx, my] = d3.pointer(event, this);
+
+                            // convert pixels into an x-value using our x-scale
+                            // wont be a whole number (something like 2013.1 for example)
+                            const x0 = xCo2.invert(mx);
+
+
+                            // place the x0 in the array and get the index
+                            let i = bisectYear(dataArray, x0, 1);
+                            if (i >= dataArray.length) i = dataArray.length - 1; // account for index being at the end of the array
+                            const d0 = dataArray[i - 1]; // point to left
+                            const d1 = dataArray[i]; // point to right
+                            const point = (x0 - d0.Year > d1.Year - x0) ? d1 : d0; // compute which datapoint is closer (i.e., 2013.1 is closer to 2013 than 2014)
+
+                            // simply get year and value from this point
+                            const year  = point.Year;
+                            const value = point.value;
+
+                            const fmt3 = d3.format(",.3f"); // format to 3 decimal points
+
+                            tooltip
+                                .style("opacity", 1)
+                                .html(`
+                                Year: ${year}<br>
+                                CO2 per capita: ${fmt3(value)}
+                                `)
+                                .style("left", (event.pageX + 10) + "px")
+                                .style("top",  (event.pageY - 28) + "px");
+                        })
+                        .on("mouseout", function () {
+                            tooltip.transition().duration(150).style("opacity", 0);
+                        });
                 }
 
                 co2G.append("text")
@@ -484,8 +536,42 @@
                         .datum(popDataSeries)
                         .attr("fill", "none")
                         .attr("stroke", "#2ca02c")
-                        .attr("stroke-width", 2)
-                        .attr("d", popLine);
+                        .attr("stroke-width", 7)
+                        .attr("d", popLine)
+                        .on("mousemove", function (event, dataArray) {     // dataArray is the full array
+                            // get current mouse x/y
+                            const [mx, my] = d3.pointer(event, this);
+
+                            // convert pixels into an x-value using our x-scale
+                            // wont be a whole number (something like 2013.1 for example)
+                            const x0 = xPop.invert(mx);
+
+
+                            // place the x0 in the array and get the index
+                            let i = bisectYear(dataArray, x0, 1);
+                            if (i >= dataArray.length) i = dataArray.length - 1; // account for index being at the end of the array
+                            const d0 = dataArray[i - 1]; // point to left
+                            const d1 = dataArray[i]; // point to right
+                            const point = (x0 - d0.Year > d1.Year - x0) ? d1 : d0; // compute which datapoint is closer (i.e., 2013.1 is closer to 2013 than 2014)
+
+                            // simply get year and value from this point
+                            const year  = point.Year;
+                            const value = point.value;
+
+                            const fmt3 = d3.format(",.3f"); // format to 3 decimal points
+
+                            tooltip
+                                .style("opacity", 1)
+                                .html(`
+                                Year: ${year}<br>
+                                Population Density: ${fmt3(value)}
+                                `)
+                                .style("left", (event.pageX + 10) + "px")
+                                .style("top",  (event.pageY - 28) + "px");
+                        })
+                        .on("mouseout", function () {
+                            tooltip.transition().duration(150).style("opacity", 0);
+                        });
                 }
 
                 popG.append("text")
